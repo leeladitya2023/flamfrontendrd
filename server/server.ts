@@ -39,6 +39,10 @@ const io = new Server(httpServer, {
 
 const rooms = new RoomManager();
 
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 app.use(express.static(clientDir));
 
 // Only fall back to index for the app shell — do not steal /socket.io/* traffic.

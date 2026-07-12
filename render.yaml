@@ -1,0 +1,16 @@
+# Render Blueprint — one-click deploy from GitHub
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: flam-collaborative-canvas
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production

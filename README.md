@@ -71,11 +71,34 @@ collaborative-canvas/
 
 ## Deploy
 
-Set `PORT` if needed. Build client assets as part of start (`npm start` already builds).
+### Render (recommended for Socket.io)
 
-Examples: Render, Railway, Fly.io, or a VPS with Node 18+.
+This app needs a **long-running Node server** (WebSockets). Static hosts like plain Vercel won’t work well.
 
-For a static host + separate WS server, serve `client/` and point the Socket.io client URL at your API origin.
+**One-click Blueprint deploy:**
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/leeladitya2023/flamfrontendrd)
+
+Or manually:
+
+1. Go to [Render Dashboard](https://dashboard.render.com/) → **New** → **Web Service**
+2. Connect `leeladitya2023/flamfrontendrd`
+3. Settings:
+   - **Build:** `npm install && npm run build`
+   - **Start:** `npm start`
+   - **Health check:** `/health`
+   - **Instance:** Free
+4. Deploy — URL will look like `https://flam-collaborative-canvas.onrender.com`
+
+Free tier note: the service sleeps after ~15 minutes idle; first request may take ~1 minute to wake. Socket reconnect is already handled.
+
+### Local tunnel (quick share while PC is on)
+
+```bash
+npm start
+# in another terminal, with ngrok installed:
+ngrok http 3000
+```
 
 ## Time spent
 
