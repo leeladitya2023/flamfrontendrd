@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flam Canvas — Collaborative Drawing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <h1 class="brand-name">Flam Canvas</h1>
+        </div>
+        <div class="topbar-meta">
+          <span class="pill">Room <strong id="room-label">lobby</strong></span>
+          <span class="pill" id="status" data-state="warn">Connecting…</span>
+          <span class="pill"><span id="online-count">0</span> online</span>
+        </div>
+      </header>
+
+      <aside class="toolbar" aria-label="Drawing tools">
+        <div class="tool-group">
+          <p class="label">Tools</p>
+          <div class="tool-row">
+            <button type="button" class="tool-btn is-active" data-tool="brush" title="Brush (B)">
+              Brush
+            </button>
+            <button type="button" class="tool-btn" data-tool="eraser" title="Eraser (E)">
+              Eraser
+            </button>
+          </div>
+        </div>
+
+        <div class="tool-group">
+          <p class="label">Color</p>
+          <div id="swatches" class="swatches" role="listbox" aria-label="Brush colors"></div>
+        </div>
+
+        <div class="tool-group">
+          <p class="label">Width <span id="width-value">4px</span></p>
+          <input
+            id="width"
+            type="range"
+            min="1"
+            max="40"
+            value="4"
+            aria-label="Stroke width"
+          />
+        </div>
+
+        <div class="tool-group history">
+          <button type="button" id="undo" class="action-btn" disabled title="Undo (Ctrl+Z)">
+            Undo
+          </button>
+          <button type="button" id="redo" class="action-btn" disabled title="Redo (Ctrl+Y)">
+            Redo
+          </button>
+        </div>
+
+        <p class="hint">
+          Tip: open
+          <code>?room=demo&amp;name=Ada</code>
+          in another tab to collaborate.
+        </p>
+      </aside>
+
+      <main class="stage" aria-label="Drawing board">
+        <div class="canvas-shell">
+          <canvas id="board" aria-label="Shared drawing canvas"></canvas>
+          <canvas id="overlay" aria-hidden="true"></canvas>
+        </div>
+      </main>
+
+      <aside class="presence" aria-label="Online users">
+        <p class="label">Who's here</p>
+        <ul id="users" class="users"></ul>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/dist/main.js"></script>
+  </body>
+</html>
