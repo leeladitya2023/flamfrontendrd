@@ -4,6 +4,17 @@ Multi-user drawing board built with **vanilla TypeScript**, **HTML5 Canvas**, **
 
 Multiple people draw on the same canvas at once. Strokes sync **while drawing** (not after mouse-up). Includes remote cursors, presence, global undo/redo, and rooms.
 
+## Live demo
+
+**https://flam-collaborative-canvas-6imm.onrender.com/**
+
+Multi-user test (open two tabs):
+
+- [Room demo as Ada](https://flam-collaborative-canvas-6imm.onrender.com/?room=demo&name=Ada)
+- [Room demo as Sam](https://flam-collaborative-canvas-6imm.onrender.com/?room=demo&name=Sam)
+
+> Free Render instances sleep after ~15 minutes idle — the first load may take about a minute to wake.
+
 ## Quick start
 
 ```bash
@@ -15,12 +26,12 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Test with multiple users
 
-1. Tab A: `http://localhost:3000/?room=demo&name=Ada`
-2. Tab B: `http://localhost:3000/?room=demo&name=Sam`
-3. Draw in either tab — the other should show strokes live and labeled cursors.
-4. Press **Ctrl+Z** / **Ctrl+Y** (or Undo/Redo buttons) — history is **global** for the room.
+1. Open the app and enter your **name** (and optional room) on the join screen
+2. Open a second tab, enter a different name, same room
+3. Draw in either tab — strokes and cursors sync live
+4. Press **Ctrl+Z** / **Ctrl+Y** (or Undo/Redo) — history is **global** for the room
 
-Same `room` query param = same canvas. Different room ids are isolated.
+Same room name = same canvas. Different rooms are isolated.
 
 ## Scripts
 
@@ -72,6 +83,8 @@ collaborative-canvas/
 ## Deploy
 
 ### Render (recommended for Socket.io)
+
+**Deployed at:** [https://flam-collaborative-canvas-6imm.onrender.com/](https://flam-collaborative-canvas-6imm.onrender.com/)
 
 This app needs a **long-running Node server** (WebSockets). Static hosts like plain Vercel won’t work well.
 

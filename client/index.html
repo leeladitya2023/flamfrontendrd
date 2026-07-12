@@ -13,7 +13,35 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div class="app">
+    <div id="join-gate" class="join-gate" role="dialog" aria-modal="true" aria-labelledby="join-title">
+      <form id="join-form" class="join-card">
+        <p class="join-eyebrow">Flam Canvas</p>
+        <h2 id="join-title">Join the board</h2>
+        <p class="join-copy">Enter your name so others know who’s drawing.</p>
+        <label class="join-label" for="join-name">Your name</label>
+        <input
+          id="join-name"
+          name="name"
+          type="text"
+          maxlength="24"
+          autocomplete="nickname"
+          placeholder="e.g. Ada"
+          required
+        />
+        <label class="join-label" for="join-room">Room</label>
+        <input
+          id="join-room"
+          name="room"
+          type="text"
+          maxlength="64"
+          autocomplete="off"
+          placeholder="lobby"
+        />
+        <button type="submit" class="join-submit">Start drawing</button>
+      </form>
+    </div>
+
+    <div class="app is-locked" id="app-shell" aria-hidden="true">
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
@@ -66,9 +94,7 @@
         </div>
 
         <p class="hint">
-          Tip: open
-          <code>?room=demo&amp;name=Ada</code>
-          in another tab to collaborate.
+          Undo/Redo is <strong>global</strong> for everyone in the room. Shortcuts: Ctrl+Z / Ctrl+Y.
         </p>
       </aside>
 

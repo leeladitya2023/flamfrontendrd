@@ -24,10 +24,10 @@ export class Room {
     this.id = id;
   }
 
-  addUser(name?: string): User {
+  addUser(name: string): User {
     const user: User = {
       id: uuidv4(),
-      name: name?.trim() || `Artist ${this.users.size + 1}`,
+      name: sanitizeDisplayName(name),
       color: USER_COLORS[this.colorIndex % USER_COLORS.length],
       cursor: null,
     };
@@ -124,6 +124,12 @@ export class RoomManager {
 function normalizeRoomId(roomId: string): string {
   const trimmed = roomId.trim().slice(0, 64);
   return trimmed || "lobby";
+}
+
+/** Keep display names short, readable, and safe for UI injection. */
+export function sanitizeDisplayName(name: string): string {
+  const cleaned = name.replace(/\s+/g, " ").trim().slice(0, 24);
+  return cleaned || "Guest";
 }
 
 function clamp01(n: number): number {

@@ -48,6 +48,8 @@ export class CanvasController {
   private cursors = new Map<string, { user: User; x: number; y: number }>();
 
   private drawing = false;
+  /** Block drawing until the user has joined a room (avoids ghost local strokes). */
+  private ready = false;
   private dpr = 1;
   private cursorRaf: number | null = null;
   private pendingCursor: Point | null = null;
@@ -91,20 +93,40 @@ export class CanvasController {
     return this.tool;
   }
 
+  setReady(ready: boolean): void {
+    this.ready = ready;
+    if (!ready && this.drawing) {
+      this.drawing = false;
+      this.localLive = null;
+      this.redrawAll();
+    }
+  }
+
   /**
    * Replace committed history and redraw.
    * Called on join sync and after global undo/redo.
+   *
+   * Important: when not mid-stroke, clear localLive so undo/redo from the
+   * server is not hidden by a stale optimistic stroke still on screen.
    */
   setStrokes(strokes: Stroke[]): void {
-    this.strokes = strokes;
-    // Drop remote live previews that were already committed.
+    this.strokes = strokes.map((s) => ({
+      ...s,
+      points: s.points.map((p) => ({ ...p })),
+    }));
+
     const ids = new Set(strokes.map((s) => s.id));
-    for (const id of this.remoteLive.keys()) {
+    for (const id of [...this.remoteLive.keys()]) {
       if (ids.has(id)) this.remoteLive.delete(id);
     }
-    if (this.localLive && ids.has(this.localLive.id)) {
+
+    if (!this.drawing) {
       this.localLive = null;
+    } else if (this.localLive && ids.has(this.localLive.id)) {
+      this.localLive = null;
+      this.drawing = false;
     }
+
     this.redrawAll();
   }
 
@@ -200,6 +222,7 @@ export class CanvasController {
   }
 
   private onPointerDown(e: PointerEvent): void {
+    if (!this.ready) return;
     e.preventDefault();
     this.overlay.setPointerCapture(e.pointerId);
 

@@ -61,14 +61,36 @@ io.on("connection", (socket) => {
 
   socket.on(Events.ROOM_JOIN, (payload: RoomJoinPayload) => {
     try {
+      const displayName = typeof payload?.userName === "string" ? payload.userName.trim() : "";
+      if (!displayName) {
+        socket.emit(Events.ERROR, { message: "Please enter your name to join" });
+        return;
+      }
+
       const roomId = payload?.roomId || "lobby";
       const room = rooms.getOrCreate(roomId);
-      const user = room.addUser(payload?.userName);
 
-      // Leave any previous room (reconnect / room switch).
-      if (data.roomId) {
+      // Re-join / reconnect: drop this socket's previous presence so we don't
+      // leak "Artist N" ghosts and inflate the online count.
+      if (data.userId && data.roomId) {
+        const previousRoom = rooms.get(data.roomId);
+        if (previousRoom) {
+          const abandoned = previousRoom.drawing.abandonUserStrokes(data.userId);
+          for (const strokeId of abandoned) {
+            socket.to(previousRoom.id).emit(Events.STROKE_ABANDONED, { strokeId });
+          }
+          const left = previousRoom.removeUser(data.userId);
+          if (left) {
+            socket.to(previousRoom.id).emit(Events.USER_LEFT, { userId: left.id });
+          }
+          if (data.roomId !== room.id) {
+            rooms.cleanupIfEmpty(data.roomId);
+          }
+        }
         socket.leave(data.roomId);
       }
+
+      const user = room.addUser(displayName);
 
       data.userId = user.id;
       data.roomId = room.id;

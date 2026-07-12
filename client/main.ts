@@ -6,12 +6,11 @@ import type { Tool, User } from "../shared/protocol.js";
 /**
  * main.ts — application bootstrap and UI wiring.
  *
- * Render flow:
- *  1. Read room/name from URL (?room=demo&name=Ada)
- *  2. Create canvas + socket
- *  3. Join room → server sends ROOM_STATE → paint history + presence
- *  4. Local pointer events → optimistic draw + socket emit
- *  5. Remote events → update canvas + sidebar
+ * Flow:
+ *  1. Show join gate (name required)
+ *  2. Connect socket + join room
+ *  3. Unlock canvas after ROOM_STATE
+ *  4. Local draw → optimistic paint + socket; undo/redo via server history
  */
 
 const BRUSH_COLORS = [
@@ -24,6 +23,9 @@ const BRUSH_COLORS = [
   "#FFFFFF",
 ];
 
+const NAME_KEY = "flam-canvas-name";
+const ROOM_KEY = "flam-canvas-room";
+
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing element #${id}`);
@@ -32,10 +34,23 @@ function $(id: string): HTMLElement {
 
 function init(): void {
   const params = new URLSearchParams(window.location.search);
-  const roomId = params.get("room") || "lobby";
-  const userName = params.get("name") || undefined;
+  const queryRoom = params.get("room");
+  const queryName = params.get("name");
 
   const state = new ClientState();
+  let activeRoomId = queryRoom || sessionStorage.getItem(ROOM_KEY) || "lobby";
+  let activeUserName = queryName || sessionStorage.getItem(NAME_KEY) || "";
+  let hasJoined = false;
+
+  const joinGate = $("join-gate");
+  const joinForm = $("join-form") as HTMLFormElement;
+  const joinName = $("join-name") as HTMLInputElement;
+  const joinRoom = $("join-room") as HTMLInputElement;
+  const appShell = $("app-shell");
+
+  joinName.value = activeUserName;
+  joinRoom.value = activeRoomId;
+  joinName.focus();
 
   const canvasEl = $("board") as HTMLCanvasElement;
   const overlayEl = $("overlay") as HTMLCanvasElement;
@@ -48,16 +63,30 @@ function init(): void {
   const widthValue = $("width-value");
   const toastEl = $("toast");
 
-  roomLabel.textContent = roomId;
+  roomLabel.textContent = activeRoomId;
 
   let socket!: SocketClient;
 
   const canvas = new CanvasController(canvasEl, overlayEl, {
-    onStrokeStart: (info) => socket.strokeStart(info),
-    onStrokePoint: (info) => socket.strokePoint(info.strokeId, info.x, info.y),
-    onStrokeEnd: (info) => socket.strokeEnd(info.strokeId),
-    onCursorMove: (point) => socket.moveCursor(point.x, point.y),
+    onStrokeStart: (info) => {
+      if (!hasJoined) return;
+      socket.strokeStart(info);
+    },
+    onStrokePoint: (info) => {
+      if (!hasJoined) return;
+      socket.strokePoint(info.strokeId, info.x, info.y);
+    },
+    onStrokeEnd: (info) => {
+      if (!hasJoined) return;
+      socket.strokeEnd(info.strokeId);
+    },
+    onCursorMove: (point) => {
+      if (!hasJoined) return;
+      socket.moveCursor(point.x, point.y);
+    },
   });
+
+  canvas.setReady(false);
 
   socket = new SocketClient({
     onConnectionChange: (connected) => {
@@ -67,12 +96,18 @@ function init(): void {
     },
 
     onRoomState: (payload) => {
+      hasJoined = true;
       state.resetFromRoom(payload);
+      activeRoomId = payload.roomId;
+      activeUserName = payload.you.name;
+      roomLabel.textContent = payload.roomId;
       canvas.setStrokes(payload.strokes);
       canvas.setUsersForCursors(payload.users, payload.you.id);
+      canvas.setReady(true);
+      unlockApp();
       renderUsers();
       renderHistoryButtons();
-      showToast(`Joined room “${payload.roomId}” as ${payload.you.name}`);
+      showToast(`Joined “${payload.roomId}” as ${payload.you.name}`);
     },
 
     onUserJoined: (user) => {
@@ -108,7 +143,12 @@ function init(): void {
 
     onStrokeCommitted: (stroke) => {
       state.upsertStroke(stroke);
+      // New commit invalidates redo and enables undo — update UI immediately
+      // even before HISTORY_UPDATED arrives.
+      state.canUndo = true;
+      state.canRedo = false;
       canvas.commitStroke(stroke);
+      renderHistoryButtons();
     },
 
     onStrokeAbandoned: (strokeId) => {
@@ -124,12 +164,38 @@ function init(): void {
     onError: (message) => showToast(message, true),
   });
 
-  // Re-join after reconnect so we get a fresh ROOM_STATE (source of truth).
   socket.onReconnect(() => {
-    socket.joinRoom(state.roomId || roomId, state.self?.name || userName);
+    if (!activeUserName) return;
+    hasJoined = false;
+    canvas.setReady(false);
+    socket.joinRoom(activeRoomId, activeUserName);
   });
 
-  socket.joinRoom(roomId, userName);
+  joinForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = joinName.value.trim();
+    const room = (joinRoom.value.trim() || "lobby").slice(0, 64);
+    if (!name) {
+      showToast("Please enter your name", true);
+      joinName.focus();
+      return;
+    }
+
+    activeUserName = name.slice(0, 24);
+    activeRoomId = room;
+    sessionStorage.setItem(NAME_KEY, activeUserName);
+    sessionStorage.setItem(ROOM_KEY, activeRoomId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("room", activeRoomId);
+    url.searchParams.set("name", activeUserName);
+    window.history.replaceState({}, "", url);
+
+    roomLabel.textContent = activeRoomId;
+    statusEl.textContent = "Joining…";
+    statusEl.dataset.state = "warn";
+    socket.joinRoom(activeRoomId, activeUserName);
+  });
 
   // --- Toolbar ---
   document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((btn) => {
@@ -166,23 +232,48 @@ function init(): void {
     widthValue.textContent = `${value}px`;
   });
 
-  undoBtn.addEventListener("click", () => socket.undo());
-  redoBtn.addEventListener("click", () => socket.redo());
+  undoBtn.addEventListener("click", () => {
+    if (!hasJoined || !state.canUndo) return;
+    socket.undo();
+  });
+  redoBtn.addEventListener("click", () => {
+    if (!hasJoined || !state.canRedo) return;
+    socket.redo();
+  });
 
   window.addEventListener("keydown", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+
     const meta = e.metaKey || e.ctrlKey;
     if (meta && e.key.toLowerCase() === "z" && !e.shiftKey) {
       e.preventDefault();
-      socket.undo();
-    } else if (meta && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
+      if (hasJoined && state.canUndo) socket.undo();
+    } else if (
+      meta &&
+      (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))
+    ) {
       e.preventDefault();
-      socket.redo();
+      if (hasJoined && state.canRedo) socket.redo();
     } else if (e.key.toLowerCase() === "b") {
       selectTool("brush");
     } else if (e.key.toLowerCase() === "e") {
       selectTool("eraser");
     }
   });
+
+  function unlockApp(): void {
+    joinGate.classList.add("is-hidden");
+    appShell.classList.remove("is-locked");
+    appShell.removeAttribute("aria-hidden");
+  }
 
   function selectTool(tool: Tool): void {
     canvas.setTool(tool);
