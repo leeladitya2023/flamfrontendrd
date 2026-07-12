@@ -104,7 +104,7 @@ export class CanvasController {
 
   /**
    * Replace committed history and redraw.
-   * Called on join sync and after global undo/redo.
+   * Called on join sync and after per-user undo/redo.
    *
    * Important: when not mid-stroke, clear localLive so undo/redo from the
    * server is not hidden by a stale optimistic stroke still on screen.

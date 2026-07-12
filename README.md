@@ -2,7 +2,7 @@
 
 Multi-user drawing board built with **vanilla TypeScript**, **HTML5 Canvas**, **Node.js**, and **Socket.io**.
 
-Multiple people draw on the same canvas at once. Strokes sync **while drawing** (not after mouse-up). Includes remote cursors, presence, global undo/redo, and rooms.
+Multiple people draw on the same canvas at once. Strokes sync **while drawing** (not after mouse-up). Includes remote cursors, presence, **per-user undo/redo**, and rooms.
 
 ## Live demo
 
@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 1. Open the app and enter your **name** (and optional room) on the join screen
 2. Open a second tab, enter a different name, same room
 3. Draw in either tab — strokes and cursors sync live
-4. Press **Ctrl+Z** / **Ctrl+Y** (or Undo/Redo) — history is **global** for the room
+4. Press **Ctrl+Z** / **Ctrl+Y** (or Undo/Redo) — each person undoes **only their own** strokes
 
 Same room name = same canvas. Different rooms are isolated.
 
@@ -48,7 +48,7 @@ Same room name = same canvas. Different rooms are isolated.
 - Live stroke streaming (`stroke:start` / `stroke:point` / `stroke:end`)
 - Remote cursor indicators
 - Online user list with assigned colors
-- Global undo/redo (shared operation log on the server)
+- Per-user undo/redo (each writer can only undo their own strokes)
 - Rooms via `?room=`
 - Touch / pen via Pointer Events
 - HiDPI canvas (`devicePixelRatio`)

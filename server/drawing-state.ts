@@ -3,48 +3,43 @@ import type { Stroke } from "../shared/protocol.js";
 /**
  * DrawingState — server-side operation log for one room.
  *
- * Purpose: Own the shared stroke history and undo/redo stacks.
- * Why server-side: Clients can disconnect or cheat; the server is source of truth.
+ * Shared `history` is what everyone sees on the canvas.
+ * Undo/redo is **per user**: each writer can only remove/restore their own strokes.
  *
  * Mental model:
- *   history  = strokes currently on the canvas (oldest → newest)
- *   redoStack = strokes removed by undo (newest undone is on top)
+ *   history     = all committed strokes (oldest → newest)
+ *   redoByUser  = Map<userId, Stroke[]> — that user's personal redo stack
  *
- * Complexity:
- *   undo/redo: O(1) stack ops + O(n) broadcast of strokes (n = history length)
- *   Space: O(total points across all strokes)
+ * Undo for user U: remove U's most recent stroke from history (not necessarily
+ * the last stroke in the room), push it onto U's redo stack.
  */
 export class DrawingState {
   private history: Stroke[] = [];
-  private redoStack: Stroke[] = [];
+  private redoByUser = new Map<string, Stroke[]>();
 
   /** In-progress strokes keyed by strokeId (not yet in history). */
   private inProgress = new Map<string, Stroke>();
 
   getStrokes(): Stroke[] {
-    return [...this.history];
+    return this.history.map((s) => ({
+      ...s,
+      points: s.points.map((p) => ({ ...p })),
+    }));
   }
 
-  canUndo(): boolean {
-    return this.history.length > 0;
+  canUndo(userId: string): boolean {
+    return this.history.some((s) => s.userId === userId);
   }
 
-  canRedo(): boolean {
-    return this.redoStack.length > 0;
+  canRedo(userId: string): boolean {
+    return (this.redoByUser.get(userId)?.length ?? 0) > 0;
   }
 
-  /**
-   * Begin a live stroke. Not undoable until endStroke commits it.
-   */
   startStroke(stroke: Stroke): Stroke {
     this.inProgress.set(stroke.id, stroke);
     return stroke;
   }
 
-  /**
-   * Append a point to an in-progress stroke.
-   * Returns null if strokeId is unknown (stale / wrong room).
-   */
   addPoint(strokeId: string, x: number, y: number): Stroke | null {
     const stroke = this.inProgress.get(strokeId);
     if (!stroke) return null;
@@ -53,30 +48,23 @@ export class DrawingState {
   }
 
   /**
-   * Commit stroke into shared history. Clears redo stack (classic editor rule:
-   * new work after undo invalidates the redo path).
+   * Commit stroke into shared history.
+   * Clears only THIS user's redo stack (classic editor rule, scoped per writer).
    */
   endStroke(strokeId: string): Stroke | null {
     const stroke = this.inProgress.get(strokeId);
     if (!stroke) return null;
 
     this.inProgress.delete(strokeId);
-
-    // Ignore empty / single-point accidental clicks as committed ops if desired.
-    // We keep them — a click-dot is a valid mark.
     this.history.push(stroke);
-    this.redoStack = [];
+    this.redoByUser.set(stroke.userId, []);
     return stroke;
   }
 
-  /**
-   * Drop an unfinished stroke (e.g. user disconnected mid-draw).
-   */
   abandonStroke(strokeId: string): boolean {
     return this.inProgress.delete(strokeId);
   }
 
-  /** Abandon every in-progress stroke owned by a leaving user. */
   abandonUserStrokes(userId: string): string[] {
     const abandoned: string[] = [];
     for (const [id, stroke] of this.inProgress) {
@@ -89,27 +77,35 @@ export class DrawingState {
   }
 
   /**
-   * Global undo: remove the last committed stroke from history.
-   * Returns the undone stroke, or null if nothing to undo.
+   * Per-user undo: remove this user's latest committed stroke.
+   * Other users' strokes are left untouched.
    */
-  undo(): Stroke | null {
-    const stroke = this.history.pop();
-    if (!stroke) return null;
-    this.redoStack.push(stroke);
-    return stroke;
+  undo(userId: string): Stroke | null {
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].userId !== userId) continue;
+      const [stroke] = this.history.splice(i, 1);
+      const stack = this.redoByUser.get(userId) ?? [];
+      stack.push(stroke);
+      this.redoByUser.set(userId, stack);
+      return stroke;
+    }
+    return null;
   }
 
   /**
-   * Global redo: re-apply the most recently undone stroke.
+   * Per-user redo: restore this user's most recently undone stroke
+   * to the end of shared history.
    */
-  redo(): Stroke | null {
-    const stroke = this.redoStack.pop();
-    if (!stroke) return null;
+  redo(userId: string): Stroke | null {
+    const stack = this.redoByUser.get(userId);
+    if (!stack || stack.length === 0) return null;
+    const stroke = stack.pop()!;
     this.history.push(stroke);
     return stroke;
   }
 
-  getInProgressByUser(userId: string): Stroke[] {
-    return [...this.inProgress.values()].filter((s) => s.userId === userId);
+  /** Drop redo memory when a user leaves (optional cleanup). */
+  clearUserRedo(userId: string): void {
+    this.redoByUser.delete(userId);
   }
 }

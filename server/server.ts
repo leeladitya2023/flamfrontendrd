@@ -96,14 +96,14 @@ io.on("connection", (socket) => {
       data.roomId = room.id;
       socket.join(room.id);
 
-      // Late-joiner sync: full state in one message.
+      // Late-joiner sync: full state in one message (undo/redo flags are personal).
       socket.emit(Events.ROOM_STATE, {
         roomId: room.id,
         you: user,
         users: room.getUsers(),
         strokes: room.drawing.getStrokes(),
-        canUndo: room.drawing.canUndo(),
-        canRedo: room.drawing.canRedo(),
+        canUndo: room.drawing.canUndo(user.id),
+        canRedo: room.drawing.canRedo(user.id),
       });
 
       socket.to(room.id).emit(Events.USER_JOINED, { user });
@@ -181,34 +181,28 @@ io.on("connection", (socket) => {
     // sender uses this to confirm; others finalize remote preview.
     io.to(room.id).emit(Events.STROKE_COMMITTED, { stroke });
 
-    const historyPayload: HistoryUpdatedPayload = {
-      strokes: room.drawing.getStrokes(),
-      canUndo: room.drawing.canUndo(),
-      canRedo: room.drawing.canRedo(),
-    };
-    // Lightweight flag update; strokes already known via STROKE_COMMITTED.
-    // We still send canUndo/canRedo so toolbar stays in sync.
-    io.to(room.id).emit(Events.HISTORY_UPDATED, historyPayload);
+    // Strokes are shared; undo/redo button state is personal per writer.
+    void broadcastHistory(room.id, room);
   });
 
   socket.on(Events.HISTORY_UNDO, () => {
     const room = getSocketRoom(data);
-    if (!room) return;
+    if (!room || !data.userId) return;
 
-    const undone = room.drawing.undo();
+    const undone = room.drawing.undo(data.userId);
     if (!undone) return;
 
-    broadcastHistory(room.id, room);
+    void broadcastHistory(room.id, room);
   });
 
   socket.on(Events.HISTORY_REDO, () => {
     const room = getSocketRoom(data);
-    if (!room) return;
+    if (!room || !data.userId) return;
 
-    const redone = room.drawing.redo();
+    const redone = room.drawing.redo(data.userId);
     if (!redone) return;
 
-    broadcastHistory(room.id, room);
+    void broadcastHistory(room.id, room);
   });
 
   socket.on("disconnect", () => {
@@ -219,6 +213,8 @@ io.on("connection", (socket) => {
     for (const strokeId of abandoned) {
       socket.to(room.id).emit(Events.STROKE_ABANDONED, { strokeId });
     }
+
+    room.drawing.clearUserRedo(data.userId);
 
     const left = room.removeUser(data.userId);
     if (left) {
@@ -234,13 +230,33 @@ function getSocketRoom(data: SocketData) {
   return rooms.get(data.roomId);
 }
 
-function broadcastHistory(roomId: string, room: { drawing: { getStrokes: () => unknown; canUndo: () => boolean; canRedo: () => boolean } }) {
-  const payload: HistoryUpdatedPayload = {
-    strokes: room.drawing.getStrokes() as HistoryUpdatedPayload["strokes"],
-    canUndo: room.drawing.canUndo(),
-    canRedo: room.drawing.canRedo(),
-  };
-  io.to(roomId).emit(Events.HISTORY_UPDATED, payload);
+/**
+ * Broadcast shared strokes to the room, then send each socket its own
+ * canUndo / canRedo (only their strokes).
+ */
+async function broadcastHistory(
+  roomId: string,
+  room: {
+    drawing: {
+      getStrokes: () => HistoryUpdatedPayload["strokes"];
+      canUndo: (userId: string) => boolean;
+      canRedo: (userId: string) => boolean;
+    };
+  }
+) {
+  const strokes = room.drawing.getStrokes();
+  const sockets = await io.in(roomId).fetchSockets();
+
+  for (const s of sockets) {
+    const userId = (s.data as SocketData).userId;
+    if (!userId) continue;
+    const payload: HistoryUpdatedPayload = {
+      strokes,
+      canUndo: room.drawing.canUndo(userId),
+      canRedo: room.drawing.canRedo(userId),
+    };
+    s.emit(Events.HISTORY_UPDATED, payload);
+  }
 }
 
 function isFiniteNumber(n: unknown): n is number {

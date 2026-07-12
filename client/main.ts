@@ -143,12 +143,13 @@ function init(): void {
 
     onStrokeCommitted: (stroke) => {
       state.upsertStroke(stroke);
-      // New commit invalidates redo and enables undo — update UI immediately
-      // even before HISTORY_UPDATED arrives.
-      state.canUndo = true;
-      state.canRedo = false;
+      // Only your own commits enable your Undo button.
+      if (stroke.userId === state.self?.id) {
+        state.canUndo = true;
+        state.canRedo = false;
+        renderHistoryButtons();
+      }
       canvas.commitStroke(stroke);
-      renderHistoryButtons();
     },
 
     onStrokeAbandoned: (strokeId) => {

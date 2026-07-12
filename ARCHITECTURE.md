@@ -3,7 +3,7 @@
 ## Goals
 
 - Smooth multi-user drawing with **live** stroke sync
-- Server-authoritative history for **global undo/redo**
+- Server-authoritative history for **per-user undo/redo**
 - Clear separation: canvas rendering vs networking vs room state
 - Defendable trade-offs in a live interview
 
@@ -24,7 +24,7 @@
 1. User presses pointer on overlay canvas.
 2. **Client-side prediction:** local stroke is painted immediately.
 3. Client emits `stroke:start`, then many `stroke:point`, then `stroke:end`.
-4. Server stores an in-progress stroke; on `stroke:end` it **commits** to `history` and clears `redoStack`.
+4. Server stores an in-progress stroke; on `stroke:end` it **commits** to `history` and clears **that user’s** redo stack.
 5. Server broadcasts to the room:
    - live points to *others* during the stroke
    - `stroke:committed` to *everyone* when finished
@@ -43,8 +43,8 @@ Coordinates are **normalized 0..1** relative to the canvas CSS box so different 
 | `stroke:start` | `{ strokeId, tool, color, width, x, y }` | Begin live stroke |
 | `stroke:point` | `{ strokeId, x, y }` | Append point |
 | `stroke:end` | `{ strokeId }` | Commit stroke into history |
-| `history:undo` | `{}` | Global undo |
-| `history:redo` | `{}` | Global redo |
+| `history:undo` | `{}` | Undo **your** last stroke |
+| `history:redo` | `{}` | Redo **your** stroke |
 
 ### Server → Client
 
@@ -63,20 +63,22 @@ Event names live in `shared/protocol.ts` so client and server cannot drift.
 
 ## Undo / redo strategy
 
-Server holds two stacks per room:
+Shared canvas history is one ordered list of strokes. Undo/redo stacks are **per user**.
 
-- `history: Stroke[]` — committed strokes (oldest → newest)
-- `redoStack: Stroke[]` — strokes removed by undo
+- `history: Stroke[]` — everyone’s committed strokes (oldest → newest)
+- `redoByUser: Map<userId, Stroke[]>` — each writer’s personal redo stack
 
-**Undo:** `pop` history → `push` redo → broadcast full `strokes` → every client clears and **replays**.
+**Undo (user U):** walk history from the end, remove the latest stroke where `userId === U`, push it onto U’s redo stack. Other users’ strokes stay.
 
-**Redo:** opposite.
+**Redo (user U):** pop U’s redo stack and append that stroke back onto shared history.
 
-**New stroke after undo:** `redoStack` is cleared (standard editor semantics).
+**New stroke by U:** clears only U’s redo stack.
 
-**Global meaning:** undo removes the chronologically last committed stroke in the room, even if another user drew it. That matches the assignment’s “global undo/redo” requirement. Per-user undo is a product alternative, not what we implemented.
+**Why not global:** product choice for fairness — one person shouldn’t erase another’s work with Ctrl+Z. The assignment mentioned global undo as a hard challenge; this per-user model is clearer for real collaboration UX and still server-authoritative.
 
-In-progress (live) strokes are **not** in `history` until `stroke:end`, so undo does not fight mid-stroke point streams.
+In-progress (live) strokes are **not** in `history` until `stroke:end`.
+
+Button flags (`canUndo` / `canRedo`) are computed **per socket** and sent personally inside `history:updated`.
 
 ## Conflict resolution
 
@@ -84,7 +86,7 @@ Freehand strokes compose; they do not merge pixels.
 
 - Simultaneous drawing → both strokes kept; order = server receive / commit order.
 - Overlap → later stroke paints on top when replayed.
-- Simultaneous undo → serialized by the Node event loop; each undo pops one op.
+- Simultaneous undo → each user’s undo only targets their own strokes; no cross-erasure.
 - Disconnect mid-stroke → abandon in-progress stroke; committed history stays.
 
 This is intentionally simpler than CRDT/OT. For freehand drawing in a take-home, an **operation log** is the right complexity / clarity trade-off.
