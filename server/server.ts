@@ -5,12 +5,14 @@ import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import {
   Events,
+  isTool,
   type CursorMovePayload,
   type HistoryUpdatedPayload,
   type RoomJoinPayload,
   type StrokeEndPayload,
   type StrokePointPayload,
   type StrokeStartPayload,
+  type Tool,
 } from "../shared/protocol.js";
 import { RoomManager } from "./rooms.js";
 
@@ -134,7 +136,7 @@ io.on("connection", (socket) => {
     const stroke = room.startStroke(
       data.userId,
       payload.strokeId,
-      payload.tool === "eraser" ? "eraser" : "brush",
+      sanitizeTool(payload.tool),
       sanitizeColor(payload.color),
       payload.width,
       payload.x,
@@ -269,6 +271,11 @@ function sanitizeColor(color: unknown): string {
     return color;
   }
   return "#111111";
+}
+
+/** Allow only known tools — unknown values fall back to brush. */
+function sanitizeTool(tool: unknown): Tool {
+  return isTool(tool) ? tool : "brush";
 }
 
 httpServer.listen(PORT, () => {

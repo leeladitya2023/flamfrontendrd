@@ -44,7 +44,9 @@ Same room name = same canvas. Different rooms are isolated.
 
 ## Features
 
-- Brush + eraser, colors, stroke width
+- Brush, pen, pencil, eraser
+- Shape tools: straight line, rectangle, circle
+- Colors, stroke width
 - Live stroke streaming (`stroke:start` / `stroke:point` / `stroke:end`)
 - Remote cursor indicators
 - Online user list with assigned colors

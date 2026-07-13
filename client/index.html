@@ -56,13 +56,34 @@
 
       <aside class="toolbar" aria-label="Drawing tools">
         <div class="tool-group">
-          <p class="label">Tools</p>
-          <div class="tool-row">
+          <p class="label">Draw</p>
+          <div class="tool-grid">
             <button type="button" class="tool-btn is-active" data-tool="brush" title="Brush (B)">
               Brush
             </button>
+            <button type="button" class="tool-btn" data-tool="pen" title="Pen (P)">
+              Pen
+            </button>
+            <button type="button" class="tool-btn" data-tool="pencil" title="Pencil (N)">
+              Pencil
+            </button>
             <button type="button" class="tool-btn" data-tool="eraser" title="Eraser (E)">
               Eraser
+            </button>
+          </div>
+        </div>
+
+        <div class="tool-group">
+          <p class="label">Shapes</p>
+          <div class="tool-grid">
+            <button type="button" class="tool-btn" data-tool="line" title="Straight line (L)">
+              Line
+            </button>
+            <button type="button" class="tool-btn" data-tool="rect" title="Rectangle (R)">
+              Rect
+            </button>
+            <button type="button" class="tool-btn" data-tool="circle" title="Circle (C)">
+              Circle
             </button>
           </div>
         </div>
@@ -94,7 +115,7 @@
         </div>
 
         <p class="hint">
-          Undo/Redo only affects <strong>your</strong> strokes — not other people’s. Shortcuts: Ctrl+Z / Ctrl+Y.
+          Drag for shapes. Undo only affects <strong>your</strong> strokes. Shortcuts: B P N E L R C, Ctrl+Z / Ctrl+Y.
         </p>
       </aside>
 

@@ -43,7 +43,14 @@ export class DrawingState {
   addPoint(strokeId: string, x: number, y: number): Stroke | null {
     const stroke = this.inProgress.get(strokeId);
     if (!stroke) return null;
-    stroke.points.push({ x, y });
+
+    // Shapes only need start + current end (replace, don't grow forever).
+    if (stroke.tool === "line" || stroke.tool === "rect" || stroke.tool === "circle") {
+      const origin = stroke.points[0] ?? { x, y };
+      stroke.points = [origin, { x, y }];
+    } else {
+      stroke.points.push({ x, y });
+    }
     return stroke;
   }
 

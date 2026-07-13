@@ -189,10 +189,15 @@ input {
 }
 
 .tool-row,
+.tool-grid,
 .history {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.tool-grid {
+  grid-template-columns: 1fr 1fr;
 }
 
 .tool-btn,

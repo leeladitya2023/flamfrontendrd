@@ -199,13 +199,20 @@ function init(): void {
   });
 
   // --- Toolbar ---
+  const TOOL_DEFAULT_WIDTH: Partial<Record<Tool, number>> = {
+    pencil: 2,
+    pen: 3,
+    brush: 6,
+    eraser: 16,
+    line: 3,
+    rect: 3,
+    circle: 3,
+  };
+
   document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tool = btn.dataset.tool as Tool;
-      canvas.setTool(tool);
-      document.querySelectorAll("[data-tool]").forEach((b) => {
-        b.classList.toggle("is-active", b === btn);
-      });
+      selectTool(tool);
     });
   });
 
@@ -265,8 +272,18 @@ function init(): void {
       if (hasJoined && state.canRedo) socket.redo();
     } else if (e.key.toLowerCase() === "b") {
       selectTool("brush");
+    } else if (e.key.toLowerCase() === "p") {
+      selectTool("pen");
+    } else if (e.key.toLowerCase() === "n") {
+      selectTool("pencil");
     } else if (e.key.toLowerCase() === "e") {
       selectTool("eraser");
+    } else if (e.key.toLowerCase() === "l") {
+      selectTool("line");
+    } else if (e.key.toLowerCase() === "r") {
+      selectTool("rect");
+    } else if (e.key.toLowerCase() === "c") {
+      selectTool("circle");
     }
   });
 
@@ -281,6 +298,12 @@ function init(): void {
     document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((b) => {
       b.classList.toggle("is-active", b.dataset.tool === tool);
     });
+    const preset = TOOL_DEFAULT_WIDTH[tool];
+    if (preset != null) {
+      canvas.setWidth(preset);
+      widthInput.value = String(preset);
+      widthValue.textContent = `${preset}px`;
+    }
   }
 
   function renderUsers(): void {

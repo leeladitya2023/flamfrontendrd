@@ -10,7 +10,39 @@ export interface Point {
   y: number;
 }
 
-export type Tool = "brush" | "eraser";
+export type Tool =
+  | "brush"
+  | "pencil"
+  | "pen"
+  | "eraser"
+  | "line"
+  | "rect"
+  | "circle";
+
+/** Freehand tools stream many points; shape tools keep [start, end]. */
+export const SHAPE_TOOLS: ReadonlySet<Tool> = new Set(["line", "rect", "circle"]);
+export const FREEHAND_TOOLS: ReadonlySet<Tool> = new Set([
+  "brush",
+  "pencil",
+  "pen",
+  "eraser",
+]);
+
+export function isTool(value: unknown): value is Tool {
+  return (
+    value === "brush" ||
+    value === "pencil" ||
+    value === "pen" ||
+    value === "eraser" ||
+    value === "line" ||
+    value === "rect" ||
+    value === "circle"
+  );
+}
+
+export function isShapeTool(tool: Tool): boolean {
+  return SHAPE_TOOLS.has(tool);
+}
 
 /** A committed stroke — one undoable operation in shared history. */
 export interface Stroke {

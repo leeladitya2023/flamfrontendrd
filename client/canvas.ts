@@ -1,15 +1,17 @@
-import type { Point, Stroke, Tool, User } from "../shared/protocol.js";
+import {
+  isShapeTool,
+  type Point,
+  type Stroke,
+  type Tool,
+  type User,
+} from "../shared/protocol.js";
 
 /**
  * CanvasController — owns the HTML5 Canvas and all drawing.
  *
- * Responsibility:
- *  - Capture pointer events and turn them into normalized stroke points
- *  - Paint committed strokes + live (local & remote) strokes
- *  - Show remote cursors
- *  - Handle devicePixelRatio so lines stay sharp on retina screens
- *
- * Why not a drawing library: assignment requires raw Canvas API skill.
+ * Tools:
+ *  - Freehand: brush, pencil, pen, eraser (stream many points)
+ *  - Shapes: line, rect, circle (store [start, end], update end while dragging)
  */
 
 export interface StrokeStartInfo {
@@ -48,7 +50,6 @@ export class CanvasController {
   private cursors = new Map<string, { user: User; x: number; y: number }>();
 
   private drawing = false;
-  /** Block drawing until the user has joined a room (avoids ghost local strokes). */
   private ready = false;
   private dpr = 1;
   private cursorRaf: number | null = null;
@@ -73,7 +74,6 @@ export class CanvasController {
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
-
     this.bindPointer();
   }
 
@@ -102,13 +102,6 @@ export class CanvasController {
     }
   }
 
-  /**
-   * Replace committed history and redraw.
-   * Called on join sync and after per-user undo/redo.
-   *
-   * Important: when not mid-stroke, clear localLive so undo/redo from the
-   * server is not hidden by a stale optimistic stroke still on screen.
-   */
   setStrokes(strokes: Stroke[]): void {
     this.strokes = strokes.map((s) => ({
       ...s,
@@ -130,7 +123,6 @@ export class CanvasController {
     this.redrawAll();
   }
 
-  /** Add a newly committed stroke without full history replace (fast path). */
   commitStroke(stroke: Stroke): void {
     if (this.strokes.some((s) => s.id === stroke.id)) return;
     this.strokes.push(stroke);
@@ -163,7 +155,7 @@ export class CanvasController {
   addRemotePoint(strokeId: string, x: number, y: number): void {
     const stroke = this.remoteLive.get(strokeId);
     if (!stroke) return;
-    stroke.points.push({ x, y });
+    this.applyPoint(stroke, x, y);
     this.redrawAll();
   }
 
@@ -190,7 +182,6 @@ export class CanvasController {
     this.paintOverlay();
   }
 
-  /** Resize backing store for sharp rendering on HiDPI displays. */
   resize(): void {
     const parent = this.canvas.parentElement;
     if (!parent) return;
@@ -211,7 +202,6 @@ export class CanvasController {
   }
 
   private bindPointer(): void {
-    // Pointer events cover mouse + touch + pen (bonus: mobile touch).
     this.overlay.addEventListener("pointerdown", (e) => this.onPointerDown(e));
     this.overlay.addEventListener("pointermove", (e) => this.onPointerMove(e));
     this.overlay.addEventListener("pointerup", (e) => this.onPointerUp(e));
@@ -240,9 +230,7 @@ export class CanvasController {
       createdAt: Date.now(),
     };
 
-    // Client-side prediction: paint immediately, don't wait for server RTT.
     this.redrawAll();
-
     this.callbacks.onStrokeStart({
       strokeId,
       tool: this.tool,
@@ -256,7 +244,6 @@ export class CanvasController {
   private onPointerMove(e: PointerEvent): void {
     const { x, y } = this.normalize(e);
 
-    // Throttle cursor emits via rAF so we don't flood the socket.
     this.pendingCursor = { x, y };
     if (this.cursorRaf == null) {
       this.cursorRaf = requestAnimationFrame(() => {
@@ -270,7 +257,7 @@ export class CanvasController {
     if (!this.drawing || !this.localLive) return;
     e.preventDefault();
 
-    this.localLive.points.push({ x, y });
+    this.applyPoint(this.localLive, x, y);
     this.redrawAll();
     this.callbacks.onStrokePoint({ strokeId: this.localLive.id, x, y });
   }
@@ -281,27 +268,30 @@ export class CanvasController {
 
     const strokeId = this.localLive.id;
     this.drawing = false;
-    // Keep localLive until server commits — avoids flicker.
     this.callbacks.onStrokeEnd({ strokeId });
 
     try {
       this.overlay.releasePointerCapture(e.pointerId);
     } catch {
-      // Already released — safe to ignore.
+      // Already released.
     }
   }
 
-  /**
-   * Convert pointer event → normalized 0..1 coords relative to canvas box.
-   * Why normalize: different window sizes must share the same logical space.
-   */
+  /** Freehand appends; shapes replace the end point. */
+  private applyPoint(stroke: Stroke, x: number, y: number): void {
+    if (isShapeTool(stroke.tool)) {
+      const origin = stroke.points[0] ?? { x, y };
+      stroke.points = [origin, { x, y }];
+    } else {
+      stroke.points.push({ x, y });
+    }
+  }
+
   private normalize(e: PointerEvent): Point {
     const rect = this.overlay.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
     return {
-      x: clamp01(x),
-      y: clamp01(y),
+      x: clamp01((e.clientX - rect.left) / rect.width),
+      y: clamp01((e.clientY - rect.top) / rect.height),
     };
   }
 
@@ -309,7 +299,6 @@ export class CanvasController {
     const { width, height } = this.cssSize();
     this.ctx.clearRect(0, 0, width, height);
 
-    // Soft paper background grain via CSS; canvas stays transparent/clear.
     for (const stroke of this.strokes) {
       this.paintStroke(this.ctx, stroke, width, height);
     }
@@ -330,22 +319,16 @@ export class CanvasController {
     for (const { user, x, y } of this.cursors.values()) {
       const px = x * width;
       const py = y * height;
-
       this.overlayCtx.beginPath();
       this.overlayCtx.fillStyle = user.color;
       this.overlayCtx.arc(px, py, 5, 0, Math.PI * 2);
       this.overlayCtx.fill();
-
       this.overlayCtx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
       this.overlayCtx.fillStyle = user.color;
       this.overlayCtx.fillText(user.name, px + 8, py - 8);
     }
   }
 
-  /**
-   * Draw one stroke as a continuous path.
-   * Eraser uses destination-out to punch through existing pixels.
-   */
   private paintStroke(
     ctx: CanvasRenderingContext2D,
     stroke: Stroke,
@@ -355,24 +338,65 @@ export class CanvasController {
     if (stroke.points.length === 0) return;
 
     ctx.save();
+    this.applyToolStyle(ctx, stroke);
+
+    if (isShapeTool(stroke.tool)) {
+      this.paintShape(ctx, stroke, width, height);
+    } else {
+      this.paintFreehand(ctx, stroke, width, height);
+    }
+
+    ctx.restore();
+  }
+
+  private applyToolStyle(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.lineWidth = stroke.width;
 
     if (stroke.tool === "eraser") {
       ctx.globalCompositeOperation = "destination-out";
       ctx.strokeStyle = "rgba(0,0,0,1)";
-    } else {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.width;
+      return;
     }
 
-    ctx.beginPath();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = stroke.color;
+
+    switch (stroke.tool) {
+      case "pencil":
+        // Light graphite feel.
+        ctx.globalAlpha = 0.65;
+        ctx.lineWidth = Math.max(1, stroke.width * 0.55);
+        break;
+      case "pen":
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = Math.max(1, stroke.width * 0.85);
+        ctx.lineCap = "butt";
+        break;
+      case "brush":
+        ctx.globalAlpha = 0.92;
+        ctx.lineWidth = stroke.width;
+        break;
+      default:
+        // line / rect / circle
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = stroke.width;
+        break;
+    }
+  }
+
+  private paintFreehand(
+    ctx: CanvasRenderingContext2D,
+    stroke: Stroke,
+    width: number,
+    height: number
+  ): void {
     const first = stroke.points[0];
+    ctx.beginPath();
     ctx.moveTo(first.x * width, first.y * height);
 
     if (stroke.points.length === 1) {
-      // Dot for a single click.
       ctx.lineTo(first.x * width + 0.01, first.y * height);
     } else {
       for (let i = 1; i < stroke.points.length; i++) {
@@ -380,9 +404,47 @@ export class CanvasController {
         ctx.lineTo(p.x * width, p.y * height);
       }
     }
-
     ctx.stroke();
-    ctx.restore();
+  }
+
+  private paintShape(
+    ctx: CanvasRenderingContext2D,
+    stroke: Stroke,
+    width: number,
+    height: number
+  ): void {
+    const a = stroke.points[0];
+    const b = stroke.points[stroke.points.length - 1] ?? a;
+    const x1 = a.x * width;
+    const y1 = a.y * height;
+    const x2 = b.x * width;
+    const y2 = b.y * height;
+
+    ctx.beginPath();
+
+    if (stroke.tool === "line") {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      return;
+    }
+
+    if (stroke.tool === "rect") {
+      const left = Math.min(x1, x2);
+      const top = Math.min(y1, y2);
+      const w = Math.abs(x2 - x1);
+      const h = Math.abs(y2 - y1);
+      ctx.strokeRect(left, top, w, h);
+      return;
+    }
+
+    // circle — ellipse inscribed in the drag bounding box
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const rx = Math.abs(x2 - x1) / 2;
+    const ry = Math.abs(y2 - y1) / 2;
+    ctx.ellipse(cx, cy, Math.max(rx, 0.5), Math.max(ry, 0.5), 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   private cssSize(): { width: number; height: number } {

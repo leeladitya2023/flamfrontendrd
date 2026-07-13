@@ -4,6 +4,7 @@ import {
   type HistoryUpdatedPayload,
   type RoomState,
   type Stroke,
+  type Tool,
   type User,
 } from "../shared/protocol.js";
 
@@ -22,7 +23,7 @@ export interface SocketHandlers {
   onStrokeStart: (payload: {
     strokeId: string;
     userId: string;
-    tool: "brush" | "eraser";
+    tool: Tool;
     color: string;
     width: number;
     x: number;
@@ -122,7 +123,7 @@ export class SocketClient {
 
   strokeStart(payload: {
     strokeId: string;
-    tool: "brush" | "eraser";
+    tool: Tool;
     color: string;
     width: number;
     x: number;
